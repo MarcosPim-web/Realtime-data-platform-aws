@@ -37,3 +37,8 @@ variable "glue_database_name" {
   description = "Nombre de la base de datos Glue del Lakehouse"
   type        = string
 }
+
+variable "database_name" {
+  description = "Nombre de la base de datos principal de Redshift Serverless"
+  type        = string
+}

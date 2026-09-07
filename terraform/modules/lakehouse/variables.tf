@@ -11,5 +11,5 @@ variable "environment" {
 variable "glue_database_name" {
   type        = string
   description = "Nombre de la base de datos de AWS Glue"
-  default     = "lakehouse_db"
+
 }

@@ -219,7 +219,7 @@ resource "aws_vpc_endpoint" "kinesis" {
 resource "aws_redshiftserverless_namespace" "main" {
   namespace_name = "${var.project_name}-${var.environment}"
 
-  db_name               = "analytics"
+  db_name               = var.database_name
   manage_admin_password = true
 
   iam_roles = [

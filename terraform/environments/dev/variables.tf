@@ -27,3 +27,43 @@ variable "bucket_prefix" {
   description = "Prefijo del bucket al que puede acceder el rol de procesamiento"
   type        = string
 }
+
+variable "kinesis_shard_count" {
+  description = "Cantidad de shards del stream de Kinesis"
+  type        = number
+}
+
+variable "flink_start_application" {
+  description = "Indica si Managed Flink debe iniciar automaticamente luego del despliegue"
+  type        = bool
+}
+
+variable "flink_checkpoint_interval_ms" {
+  description = "Intervalo entre checkpoints de Flink en milisegundos"
+  type        = number
+}
+
+variable "flink_min_pause_between_checkpoints_ms" {
+  description = "Pausa minima entre checkpoints de Flink en milisegundos"
+  type        = number
+}
+
+variable "flink_parallelism" {
+  description = "Paralelismo de la aplicacion Flink"
+  type        = number
+}
+
+variable "flink_parallelism_per_kpu" {
+  description = "Paralelismo por KPU de Managed Flink"
+  type        = number
+}
+
+variable "glue_database_name" {
+  description = "Nombre de la base de datos Glue del Lakehouse"
+  type        = string
+}
+
+variable "redshift_database_name" {
+  description = "Nombre de la base de datos principal de Redshift Serverless"
+  type        = string
+}

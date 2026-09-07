@@ -1,0 +1,17 @@
+﻿region                              = "us-east-1"
+project_name                        = "realtime-data-platform"
+environment                         = "dev"
+vpc_cidr                            = "10.0.0.0/16"
+bucket_name                         = "CHANGE-ME-unique-raw-bucket"
+bucket_prefix                       = "raw/"
+
+kinesis_shard_count                 = 2
+
+flink_start_application             = true
+flink_checkpoint_interval_ms        = 60000
+flink_min_pause_between_checkpoints_ms = 5000
+flink_parallelism                   = 1
+flink_parallelism_per_kpu           = 1
+
+glue_database_name     = "lakehouse_db"
+redshift_database_name = "analytics"

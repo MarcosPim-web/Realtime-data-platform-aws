@@ -1,0 +1,3 @@
+region = "us-east-1"
+state_bucket_name = "CHANGE-ME-unique-terraform-state-bucket"
+lock_table_name = "CHANGE-ME-terraform-lock-table"

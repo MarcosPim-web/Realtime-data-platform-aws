@@ -49,4 +49,7 @@ terraform.rc
 .vscode/
 
 # Maven build artifacts
-flink/target/
+flink-app/target/
+# Local Terraform backend configuration
+backend.hcl
+sql/streaming_ingestion.rendered.sql

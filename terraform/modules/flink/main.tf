@@ -235,9 +235,9 @@ resource "aws_kinesisanalyticsv2_application" "flink" {
   runtime_environment    = "FLINK-1_20"
   service_execution_role = aws_iam_role.flink.arn
 
-  # La dejamos detenida al crearla para evitar consumo accidental.
-  # Más adelante la arrancamos cuando hagamos la prueba end-to-end.
-  start_application = false
+  # El arranque de la aplicación se controla desde la configuración del entorno.
+  # Para la validación end-to-end se utiliza start_application = true.
+  start_application = var.start_application
 
   application_configuration {
 
@@ -287,8 +287,8 @@ resource "aws_kinesisanalyticsv2_application" "flink" {
       checkpoint_configuration {
         configuration_type            = "CUSTOM"
         checkpointing_enabled         = true
-        checkpoint_interval           = 60000
-        min_pause_between_checkpoints = 5000
+        checkpoint_interval           = var.checkpoint_interval_ms
+        min_pause_between_checkpoints = var.min_pause_between_checkpoints_ms
       }
 
       monitoring_configuration {
@@ -300,8 +300,8 @@ resource "aws_kinesisanalyticsv2_application" "flink" {
       parallelism_configuration {
         configuration_type   = "CUSTOM"
         auto_scaling_enabled = false
-        parallelism          = 1
-        parallelism_per_kpu  = 1
+        parallelism          = var.parallelism
+        parallelism_per_kpu  = var.parallelism_per_kpu
       }
     }
   }

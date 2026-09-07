@@ -31,13 +31,15 @@ module "kinesis" {
 
   environment     = var.environment
   project_name    = var.project_name
-  shard_count     = 2
+  shard_count     = var.kinesis_shard_count
   raw_bucket_name = aws_s3_bucket.raw.bucket
   raw_bucket_arn  = aws_s3_bucket.raw.arn
 }
 
 module "lakehouse" {
   source = "../../modules/lakehouse"
+
+  glue_database_name = var.glue_database_name
 
   project_name = var.project_name
   environment  = var.environment
@@ -51,16 +53,24 @@ module "flink" {
   region             = var.region
   kinesis_stream_arn = module.kinesis.kinesis_stream_arn
 
+  start_application                = var.flink_start_application
+  checkpoint_interval_ms           = var.flink_checkpoint_interval_ms
+  min_pause_between_checkpoints_ms = var.flink_min_pause_between_checkpoints_ms
+  parallelism                      = var.flink_parallelism
+  parallelism_per_kpu              = var.flink_parallelism_per_kpu
+
   lakehouse_bucket_name  = module.lakehouse.bucket_name
   lakehouse_bucket_arn   = module.lakehouse.bucket_arn
   glue_database_name     = module.lakehouse.glue_database_name
   iceberg_warehouse_path = module.lakehouse.warehouse_path
 
-  jar_path = "${path.root}/../../../flink/target/realtime-flink-processing-1.0.0.jar"
+  jar_path = "${path.root}/../../../flink-app/target/realtime-flink-processing-1.0.0.jar"
 }
 
 module "redshift" {
   source = "../../modules/redshift"
+
+  database_name = var.redshift_database_name
 
   project_name = var.project_name
   environment  = var.environment

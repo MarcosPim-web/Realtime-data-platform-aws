@@ -42,3 +42,28 @@ variable "iceberg_warehouse_path" {
   type        = string
   description = "Ruta S3 del warehouse de Apache Iceberg"
 }
+
+variable "start_application" {
+  description = "Indica si la aplicacion Flink debe iniciarse automaticamente"
+  type        = bool
+}
+
+variable "checkpoint_interval_ms" {
+  description = "Intervalo entre checkpoints en milisegundos"
+  type        = number
+}
+
+variable "min_pause_between_checkpoints_ms" {
+  description = "Pausa minima entre checkpoints en milisegundos"
+  type        = number
+}
+
+variable "parallelism" {
+  description = "Paralelismo de la aplicacion Flink"
+  type        = number
+}
+
+variable "parallelism_per_kpu" {
+  description = "Paralelismo por KPU"
+  type        = number
+}

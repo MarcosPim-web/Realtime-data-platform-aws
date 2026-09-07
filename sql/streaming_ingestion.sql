@@ -14,7 +14,7 @@
 -- sensor_stream_raw (Materialized View)
 --        |
 --        v
--- sensor_stream_typed (Materialized View)
+-- sensor_stream_typed (View)
 --        |
 --        v
 -- sensor_stream_ready (View)
@@ -56,9 +56,9 @@ IAM_ROLE default;
 -- Los registros inválidos quedan disponibles en failed_payload.
 -- =============================================================================
 
-CREATE MATERIALIZED VIEW sensor_stream_raw AS
+CREATE MATERIALIZED VIEW sensor_stream_raw AUTO REFRESH YES AS
 SELECT
-    approximate_arrival_timestamp,
+    approximate_arrival_timestamp AS arrival_timestamp,
     partition_key,
     shard_id,
     sequence_number,
@@ -75,7 +75,7 @@ SELECT
         ELSE NULL
     END AS failed_payload
 
-FROM kinesis_stream."realtime-data-platform-dev-stream";
+FROM kinesis_stream."${KINESIS_STREAM_NAME}";
 
 
 -- =============================================================================
@@ -87,9 +87,9 @@ FROM kinesis_stream."realtime-data-platform-dev-stream";
 -- el mantenimiento incremental de la Materialized View.
 -- =============================================================================
 
-CREATE MATERIALIZED VIEW sensor_stream_typed AS
+CREATE OR REPLACE VIEW sensor_stream_typed AS
 SELECT
-    approximate_arrival_timestamp,
+    arrival_timestamp,
     partition_key,
     shard_id,
     sequence_number,
@@ -113,7 +113,7 @@ WHERE payload IS NOT NULL;
 
 CREATE OR REPLACE VIEW sensor_stream_ready AS
 SELECT
-    approximate_arrival_timestamp,
+    arrival_timestamp,
     partition_key,
     shard_id,
     sequence_number,
@@ -131,21 +131,33 @@ FROM sensor_stream_typed;
 
 
 -- =============================================================================
--- 5. REFRESH MANUAL
+-- 5. POLITICA DE REFRESH Y FRESHNESS
 --
--- Ejecutar en este orden para incorporar nuevos datos del stream.
+-- sensor_stream_raw utiliza AUTO REFRESH YES para consumir Kinesis de forma
+-- automatica. Las capas sensor_stream_typed y sensor_stream_ready son VIEWs
+-- convencionales, por lo que no requieren un refresh independiente.
+--
+-- Objetivo operativo:
+--   Freshness objetivo: <= 60 segundos.
+--   Warning:              > 90 segundos.
+--   Critical:             > 120 segundos sostenidos durante 5 minutos.
+--
+-- Ante lag elevado:
+--   1. Revisar SYS_STREAM_SCAN_STATES y skipped_rows.
+--   2. Revisar IteratorAgeMilliseconds y throughput de Kinesis.
+--   3. Revisar carga/RPU de Redshift Serverless.
+--   4. Escalar shards, procesamiento o capacidad segun el cuello de botella.
+--
+-- Para una validacion controlada puede forzarse excepcionalmente:
+-- REFRESH MATERIALIZED VIEW sensor_stream_raw;
 -- =============================================================================
-
-REFRESH MATERIALIZED VIEW sensor_stream_raw;
-
-REFRESH MATERIALIZED VIEW sensor_stream_typed;
-
 
 -- =============================================================================
 -- 6. VALIDACIÓN DE DATOS HOT
 -- =============================================================================
 
 SELECT
+    arrival_timestamp,
     sensor_id,
     event_timestamp,
     temperature,
@@ -168,10 +180,7 @@ SELECT
     is_stale,
     autorefresh
 FROM SVV_MV_INFO
-WHERE name IN (
-    'sensor_stream_raw',
-    'sensor_stream_typed'
-);
+WHERE name = 'sensor_stream_raw';
 
 
 -- =============================================================================
@@ -180,8 +189,8 @@ WHERE name IN (
 
 CREATE EXTERNAL SCHEMA lakehouse_ext
 FROM DATA CATALOG
-DATABASE 'lakehouse_db'
-REGION 'us-east-1'
+DATABASE '${GLUE_DATABASE_NAME}'
+REGION '${AWS_REGION}'
 IAM_ROLE default;
 
 
@@ -320,7 +329,7 @@ SELECT
 FROM SYS_STREAM_SCAN_STATES
 
 WHERE external_schema_name = 'kinesis_stream'
-  AND stream_name = 'realtime-data-platform-dev-stream'
+  AND stream_name = '${KINESIS_STREAM_NAME}'
   AND mv_name = 'sensor_stream_raw'
 
 QUALIFY ROW_NUMBER() OVER (
@@ -359,5 +368,5 @@ TO ROLE analytics_reader;
 GRANT USAGE ON SCHEMA lakehouse_ext
 TO ROLE analytics_reader;
 
-GRANT TEMP ON DATABASE analytics
+GRANT TEMP ON DATABASE ${REDSHIFT_DATABASE_NAME}
 TO ROLE analytics_reader;
