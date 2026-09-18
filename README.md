@@ -1,42 +1,40 @@
-# Infraestructura de datos en AWS con Terraform
+# Real-Time Data Platform on AWS
 
-Este repositorio contiene el proyecto Capstone desarrollado a partir de las preentregas 1, 2, 3, 4, 5 y 6 del curso de Data Engineering.
+End-to-end Data Engineering platform for real-time event ingestion, stateful stream processing, Lakehouse storage and low-latency analytics on AWS.
 
-Las distintas etapas fueron integradas progresivamente hasta conformar una plataforma de datos validada de extremo a extremo, combinando infraestructura como código, ingesta en tiempo real, procesamiento distribuido y stateful, arquitectura Lakehouse y una capa analítica de baja latencia.
+The infrastructure is provisioned with Terraform and implements two parallel analytical paths from the same Amazon Kinesis Data Stream:
 
-La infraestructura principal se administra mediante Terraform y utiliza servicios de AWS como Amazon Kinesis Data Streams, Amazon Data Firehose, AWS Managed Service for Apache Flink, Amazon S3, AWS Glue Data Catalog, Apache Iceberg y Amazon Redshift Serverless.
-
-El Capstone final utiliza dos caminos analíticos paralelos a partir del mismo stream de Kinesis:
-
-- **Hot path:** Kinesis → Redshift Streaming Ingestion → `sensor_stream_raw` → `sensor_stream_typed` → `sensor_stream_ready`.
+- **Hot path:** Kinesis → Redshift Streaming Ingestion → low-latency analytical views.
 - **Historical path:** Kinesis → Apache Flink → Apache Iceberg → Amazon S3 / AWS Glue → Redshift Spectrum.
 
-Esta separación permite combinar baja latencia para eventos recientes con almacenamiento histórico consistente y consultable.
+The project combines Infrastructure as Code, stream processing, Event Time, Watermarks, state management, Iceberg tables, observability and analytical consumption in a reproducible cloud environment.
+
+> The project originated during my Data Engineering training and was later consolidated, extended and documented as a portfolio project.
 
 ---
 
-## Arquitectura final
+## Architecture
 
 ```mermaid
 flowchart LR
-    Producer["Productor de sensores"]
+    Producer["Synthetic Sensor Producer"]
     Kinesis["Amazon Kinesis Data Streams"]
 
     Flink["AWS Managed Service for Apache Flink"]
-    Window["Event Time + Watermarks<br/>Tumbling Window 1 minuto"]
+    Window["Event Time + Watermarks<br/>1-minute Tumbling Windows"]
     Iceberg["Apache Iceberg<br/>sensor_metrics"]
-    S3["Amazon S3<br/>Parquet + metadata"]
+    S3["Amazon S3<br/>Parquet + Metadata"]
     Glue["AWS Glue Data Catalog<br/>lakehouse_db"]
 
     Redshift["Amazon Redshift Serverless"]
-    RawMV["Materialized View<br/>sensor_stream_raw<br/>AUTO REFRESH"]
+    RawMV["Materialized View<br/>sensor_stream_raw"]
     Typed["View<br/>sensor_stream_typed"]
     Ready["View<br/>sensor_stream_ready"]
 
-    Join["JOIN hot + histórico"]
+    Join["Hot + Historical Analytics"]
 
     CloudWatch["Amazon CloudWatch"]
-    Checkpoint["Checkpoints Flink"]
+    Checkpoints["Flink Checkpoints"]
 
     Producer --> Kinesis
 
@@ -59,483 +57,87 @@ flowchart LR
 
     Kinesis --> CloudWatch
     Flink --> CloudWatch
-    Flink --> Checkpoint
+    Flink --> Checkpoints
 ```
 
 ---
 
-## Parámetros críticos
+## Main capabilities
 
-La configuración utilizada por el entorno de desarrollo define explícitamente los parámetros principales de procesamiento.
-
-| Parámetro | Valor |
-|---|---:|
-| Región AWS | `us-east-1` |
-| Kinesis shards | `2` |
-| Kinesis retention | configuración estándar del stream |
-| Flink runtime | `FLINK-1_20` |
-| Flink parallelism | `1` |
-| Parallelism per KPU | `1` |
-| Auto Scaling Flink | deshabilitado |
-| Checkpoint interval | `60000 ms` |
-| Minimum pause between checkpoints | `5000 ms` |
-| Watermark out-of-orderness | `10 segundos` |
-| Source idleness | `30 segundos` |
-| Window | `1 minuto` |
-| Redshift Serverless base capacity | `4 RPU` |
-| Redshift Serverless max capacity | `4 RPU` |
-| Redshift public access | deshabilitado |
-
-Los valores críticos de Kinesis y Flink se reciben mediante variables del entorno de Terraform en lugar de quedar acoplados al módulo.
+- Real-time event ingestion with Amazon Kinesis Data Streams.
+- Stateful stream processing with Apache Flink.
+- Event Time processing with Watermarks and idleness detection.
+- One-minute Tumbling Event Time Windows.
+- Stateful recovery through Flink checkpoints.
+- Lakehouse storage using Apache Iceberg.
+- Parquet data and Iceberg metadata stored in Amazon S3.
+- Metadata management through AWS Glue Data Catalog.
+- Direct Kinesis ingestion into Amazon Redshift Serverless.
+- Low-latency SQL transformation layer in Redshift.
+- Historical analytics through Redshift Spectrum.
+- Hot + historical data joins.
+- Infrastructure provisioning with reusable Terraform modules.
+- Remote Terraform state using S3 and DynamoDB locking.
+- Private networking and scoped IAM policies.
+- CloudWatch metrics and streaming observability.
+- Controlled infrastructure lifecycle with `plan`, `apply` and `destroy`.
 
 ---
 
-# Recursos implementados
+## Technology stack
 
-## Preentrega 1: infraestructura base
-
-La primera etapa creó la infraestructura base necesaria para desplegar posteriormente los servicios de procesamiento.
-
-Se implementaron:
-
-- Backend remoto de Terraform en Amazon S3.
-- Tabla de DynamoDB para bloqueo del estado.
-- VPC dedicada para la plataforma.
-- Subredes privadas distribuidas en distintas Availability Zones.
-- Tabla de rutas.
-- Gateway Endpoint para Amazon S3.
-- Roles y políticas IAM.
-- Rol IAM de auditoría de solo lectura.
-- Separación entre bootstrap y entorno principal.
-
-El backend se mantiene separado del entorno de desarrollo porque debe existir antes de inicializar el state remoto del resto de la infraestructura.
+| Area | Technologies |
+|---|---|
+| Cloud | AWS |
+| Infrastructure as Code | Terraform |
+| Streaming ingestion | Amazon Kinesis Data Streams, Amazon Data Firehose |
+| Stream processing | Apache Flink |
+| Lakehouse | Apache Iceberg |
+| Object storage | Amazon S3 |
+| Data catalog | AWS Glue Data Catalog |
+| Analytics | Amazon Redshift Serverless, Redshift Spectrum |
+| Monitoring | Amazon CloudWatch |
+| Languages | Java, Python, SQL, PowerShell |
+| Build | Apache Maven |
+| Local distributed processing | Apache Kafka, Apache Spark |
+| Containers / orchestration | Docker, Kubernetes, Minikube |
+| Version control | Git, GitHub |
 
 ---
 
-## Preentrega 2: ingesta en tiempo real
+# Data flow
 
-La segunda etapa incorporó el primer flujo de ingesta de eventos.
+## Hot path
 
-Se implementaron:
-
-- Amazon Kinesis Data Stream.
-- Amazon Data Firehose.
-- Entrega de eventos hacia Amazon S3.
-- Roles y políticas IAM para Firehose.
-- Alarmas de Amazon CloudWatch.
-- Script PowerShell para generación de eventos.
-- Validación de archivos almacenados en la capa Raw/Bronze.
-
-El flujo correspondiente a esta etapa es:
+The hot path is designed for low-latency access to recent events.
 
 ```text
-Producer
-   |
-   v
+Synthetic Producer
+        |
+        v
 Amazon Kinesis Data Streams
-   |
-   v
-Amazon Data Firehose
-   |
-   v
-Amazon S3
-Raw / Bronze
-```
-
----
-
-## Preentrega 3: procesamiento distribuido
-
-La tercera etapa incorporó un entorno local de procesamiento distribuido basado en Kubernetes.
-
-Se implementaron:
-
-- Namespace `urban-data`.
-- Apache Kafka mediante Kubernetes Deployment y Service.
-- Configuración de Kafka mediante ConfigMap.
-- Tópico `urban_sensors`.
-- 3 particiones.
-- Productor Python.
-- Apache Spark Structured Streaming.
-- Configuración de Spark mediante ConfigMap.
-- Job de Spark montado automáticamente.
-- Ventanas de procesamiento de 1 minuto.
-- Agregaciones por `sensor_id`.
-
-El flujo local utilizado fue:
-
-```text
-Producer Python
-       |
-       v
-Apache Kafka
-urban_sensors
-       |
-       v
-Apache Spark
-Structured Streaming
-       |
-       v
-Window 1 minuto
-       |
-       v
-AVG temperature
-AVG air_quality_index
-```
-
-Los manifiestos se encuentran dentro de:
-
-```text
-k8s/
-```
-
-y el job de Spark en:
-
-```text
-spark/streaming_job.py
-```
-
----
-
-## Preentrega 4: procesamiento stateful con Apache Flink
-
-La cuarta etapa trasladó el procesamiento en tiempo real hacia AWS Managed Service for Apache Flink.
-
-Se implementaron:
-
-- AWS Managed Service for Apache Flink.
-- Apache Flink 1.20.
-- Aplicación Java empaquetada mediante Maven.
-- Consumo desde Kinesis Data Streams.
-- Parseo de eventos JSON.
-- Event Time.
-- Watermarks.
-- Idleness detection.
-- Agrupación por `sensor_id`.
-- Tumbling Event Time Windows.
-- Procesamiento stateful.
-- Checkpoints automáticos.
-- CloudWatch Logs.
-- Bucket S3 para el artefacto JAR.
-- IAM específico para Flink.
-
-### Event Time y Watermarks
-
-Después de deserializar cada evento, la aplicación utiliza el timestamp incluido en el payload como Event Time.
-
-La estrategia configurada permite hasta:
-
-```text
-10 segundos
-```
-
-de eventos fuera de orden.
-
-También se utiliza:
-
-```text
-Idleness: 30 segundos
-```
-
-para evitar que una partición temporalmente inactiva impida el avance global del watermark.
-
-El procesamiento se organiza mediante:
-
-```text
-keyBy(sensor_id)
-```
-
-y ventanas:
-
-```text
-Tumbling Event Time Window
-1 minuto
-```
-
-### Checkpoints
-
-La configuración utiliza:
-
-```text
-Checkpoint interval: 60000 ms
-Minimum pause: 5000 ms
-Checkpointing: enabled
-```
-
-Durante las pruebas se observaron múltiples checkpoints completados correctamente.
-
-Los checkpoints permiten recuperar el estado del job ante fallos y son además utilizados para coordinar los commits realizados por Apache Iceberg.
-
-### Aplicación Flink
-
-La aplicación se encuentra en:
-
-```text
-flink-app/src/main/java/com/dataops/flink/SensorStreamingJob.java
-```
-
-El proyecto Maven se encuentra en:
-
-```text
-flink-app/pom.xml
-```
-
-Para compilar:
-
-```powershell
-cd flink
-mvn clean package
-cd ..
-```
-
-Terraform utiliza el artefacto:
-
-```text
-flink-app/target/realtime-flink-processing-1.0.0.jar
-```
-
-El objeto almacenado en S3 utiliza un hash derivado del archivo para permitir que Terraform detecte modificaciones en el artefacto.
-
-### Arranque mediante Terraform
-
-El comportamiento de arranque de la aplicación se controla mediante:
-
-```hcl
-flink_start_application = true
-```
-
-Para la validación final se utiliza `true`.
-
-De esta manera, `terraform apply` crea la aplicación y solicita su inicio como parte del despliegue declarativo, sin requerir ejecutar manualmente `aws kinesisanalyticsv2 start-application`.
-
-Durante la ejecución el estado esperado es:
-
-```text
-RUNNING
-```
-
----
-
-## Preentrega 5: Lakehouse con Apache Iceberg
-
-La quinta etapa incorporó una capa Lakehouse.
-
-Se implementaron:
-
-- Bucket S3 dedicado al warehouse.
-- Cifrado AES256.
-- Versionado del bucket.
-- AWS Glue Data Catalog.
-- Base de datos `lakehouse_db`.
-- Apache Iceberg.
-- Tabla `sensor_metrics`.
-- Apache Flink Iceberg Sink.
-- Archivos Parquet.
-- Metadata Iceberg.
-- Manifests.
-- Snapshots.
-- Particionamiento por día.
-- Integración con Amazon Athena.
-
-El flujo implementado es:
-
-```text
-Kinesis
-   |
-   v
-Apache Flink
-   |
-   v
-Event Time + Watermarks
-   |
-   v
-Window 1 minuto
-   |
-   v
-IcebergSink
-   |
-   v
-Apache Iceberg
-   |
-   +------------------+
-   |                  |
-   v                  v
-Amazon S3         AWS Glue
-Parquet           Data Catalog
-Metadata               |
-   |                    v
-   +--------------> Amazon Athena
-```
-
-### Tabla Iceberg
-
-La tabla utilizada es:
-
-```text
-lakehouse_db.sensor_metrics
-```
-
-Los campos principales son:
-
-```text
-sensor_id
-window_start
-window_end
-event_count
-avg_temperature
-avg_humidity
-avg_aqi
-```
-
-La tabla utiliza formato Iceberg v2 y se encuentra particionada utilizando el día correspondiente a `window_start`.
-
-### Checkpoints y commits Iceberg
-
-La escritura hacia Apache Iceberg está coordinada con los checkpoints de Flink.
-
-El sink utilizado es:
-
-```java
-IcebergSink
-    .forRow(...)
-    .tableLoader(...)
-    .append();
-```
-
-Los commits visibles de la tabla se coordinan con checkpoints completados correctamente.
-
-Durante las pruebas se verificaron componentes como:
-
-```text
-IcebergWriteAggregator
-IcebergCommitter
-```
-
-y se validó la existencia de:
-
-- Archivos Parquet.
-- Metadata.
-- Manifests.
-- Snapshots.
-
----
-
-## Preentrega 6: Redshift Streaming Ingestion
-
-La sexta etapa incorporó Amazon Redshift Serverless como capa analítica de baja latencia.
-
-Se implementaron:
-
-- Amazon Redshift Serverless.
-- Namespace `realtime-data-platform-dev`.
-- Workgroup `realtime-data-platform-dev-wg`.
-- Capacidad base de 4 RPU.
-- Capacidad máxima de 4 RPU.
-- Límite diario de compute.
-- Subredes privadas.
-- Security Groups.
-- Interface VPC Endpoint para Kinesis.
-- Rol IAM específico para Redshift.
-- Streaming Ingestion desde Kinesis.
-- Integración con Glue e Iceberg.
-- JOIN entre información hot e histórica.
-- Monitoreo mediante `SYS_STREAM_SCAN_STATES`.
-- Rol SQL `analytics_reader`.
-
-El camino hot final es:
-
-```text
-Amazon Kinesis Data Streams
-             |
-             v
+        |
+        v
 Redshift Streaming Ingestion
-             |
-             v
+        |
+        v
 sensor_stream_raw
 Materialized View
 AUTO REFRESH
-             |
-             v
+        |
+        v
 sensor_stream_typed
-View
-             |
-             v
-sensor_stream_ready
-View
-```
-
-En paralelo:
-
-```text
-Kinesis
-   |
-   v
-Flink
-   |
-   v
-Apache Iceberg
-   |
-   +---- Amazon S3
-   |
-   +---- AWS Glue Data Catalog
-              |
-              v
-     Redshift External Schema
-              |
-              v
-     lakehouse_ext.sensor_metrics
-```
-
-Finalmente:
-
-```text
+        |
+        v
 sensor_stream_ready
         |
-        +------ JOIN por sensor_id ------+
-                                        |
-                                        v
-                         lakehouse_ext.sensor_metrics
+        v
+Low-latency analytics
 ```
 
----
+`sensor_stream_raw` consumes directly from Kinesis using Redshift Streaming Ingestion.
 
-# Modelado de Redshift Streaming Ingestion
-
-## External Schema de Kinesis
-
-Redshift se conecta directamente al stream mediante:
-
-```sql
-CREATE EXTERNAL SCHEMA kinesis_stream
-FROM KINESIS
-IAM_ROLE default;
-```
-
-Este camino no utiliza S3 como intermediario.
-
----
-
-## Materialized View raw
-
-La capa de ingesta principal es:
-
-```text
-sensor_stream_raw
-```
-
-La Materialized View consume directamente:
-
-```text
-kinesis_stream."realtime-data-platform-dev-stream"
-```
-
-y utiliza:
-
-```sql
-AUTO REFRESH YES
-```
-
-El payload se valida antes de parsearse:
+The event payload is validated before parsing:
 
 ```sql
 CASE
@@ -545,161 +147,73 @@ CASE
 END AS payload
 ```
 
-Los eventos inválidos quedan disponibles mediante:
+Invalid payloads remain observable through the ingestion layer rather than silently failing.
 
-```text
-failed_payload
-```
-
-La vista también expone:
+The next transformation layers expose typed analytical fields such as:
 
 ```text
 arrival_timestamp
-partition_key
-shard_id
-sequence_number
-```
-
-`arrival_timestamp` corresponde al timestamp aproximado de llegada del registro a Kinesis y se utiliza en las validaciones de freshness.
-
----
-
-## Modelado del JSON
-
-Los eventos contienen:
-
-```text
 sensor_id
-timestamp
+event_timestamp
 temperature
 humidity
 air_quality_index
 ```
 
-La View:
-
-```text
-sensor_stream_typed
-```
-
-extrae los valores desde el objeto `SUPER` y los convierte a tipos SQL.
-
-La capa contiene:
-
-```text
-arrival_timestamp
-sensor_id
-event_timestamp_raw
-temperature
-humidity
-air_quality_index
-```
-
-Los tipos principales utilizados son:
-
-```text
-sensor_id              VARCHAR
-event_timestamp_raw    VARCHAR
-temperature            DECIMAL(5,2)
-humidity               DECIMAL(5,2)
-air_quality_index      INTEGER
-```
-
-El timestamp del evento se mantiene inicialmente como `VARCHAR`.
-
-La conversión final ocurre en:
-
-```text
-sensor_stream_ready
-```
-
-mediante:
+The final event timestamp is safely converted with:
 
 ```sql
 TRY_CAST(event_timestamp_raw AS TIMESTAMPTZ)
 ```
 
-De esta manera, `sensor_stream_raw` concentra la ingesta incremental desde Kinesis mientras que `sensor_stream_typed` y `sensor_stream_ready` funcionan como capas SQL de transformación sin requerir refresh independiente.
-
----
-
-## Estrategia de refresh
-
-La configuración final utiliza:
+The raw streaming Materialized View uses:
 
 ```sql
-CREATE MATERIALIZED VIEW sensor_stream_raw
 AUTO REFRESH YES
 ```
 
-Las capas:
-
-```text
-sensor_stream_typed
-sensor_stream_ready
-```
-
-son Views convencionales.
-
-Por lo tanto, la operación normal no requiere ejecutar manualmente múltiples comandos `REFRESH MATERIALIZED VIEW`.
-
-Para una validación controlada todavía puede ejecutarse excepcionalmente:
-
-```sql
-REFRESH MATERIALIZED VIEW sensor_stream_raw;
-```
-
-pero este comando no forma parte de la operación normal del pipeline final.
-
-### Política de freshness
-
-La política operativa definida para el camino hot es:
-
-```text
-Freshness objetivo: <= 60 segundos
-Warning:             > 90 segundos
-Critical:            > 120 segundos sostenidos durante 5 minutos
-```
-
-Ante un aumento del lag se revisan conjuntamente:
-
-- `SYS_STREAM_SCAN_STATES`.
-- `skipped_rows`.
-- `IteratorAgeMilliseconds`.
-- Throughput del Kinesis Data Stream.
-- Utilización del workgroup de Redshift.
-- Capacidad RPU disponible.
-
-Según el cuello de botella detectado, la respuesta puede incluir:
-
-- Incrementar shards de Kinesis.
-- Revisar el procesamiento de Flink.
-- Revisar sinks.
-- Ajustar paralelismo.
-- Ajustar capacidad de Redshift Serverless.
-- Revisar carga de consultas.
+while `sensor_stream_typed` and `sensor_stream_ready` are conventional SQL Views.
 
 ---
 
-# Integración de Redshift con Apache Iceberg
+## Historical path
 
-Redshift utiliza un External Schema conectado con AWS Glue Data Catalog:
-
-```sql
-CREATE EXTERNAL SCHEMA lakehouse_ext
-FROM DATA CATALOG
-DATABASE 'lakehouse_db'
-REGION 'us-east-1'
-IAM_ROLE default;
-```
-
-Esto permite consultar:
+The historical path performs stateful aggregation and stores the resulting analytical data in an Iceberg Lakehouse.
 
 ```text
-lakehouse_ext.sensor_metrics
+Amazon Kinesis Data Streams
+        |
+        v
+Apache Flink
+        |
+        v
+Event Time + Watermarks
+        |
+        v
+1-minute Tumbling Windows
+        |
+        v
+Apache Iceberg
+        |
+        +-------------------+
+        |                   |
+        v                   v
+    Amazon S3          AWS Glue
+ Parquet + metadata    Data Catalog
+        |                   |
+        +---------+---------+
+                  |
+                  v
+          Redshift Spectrum
 ```
 
-La consulta histórica puede recuperar:
+The main Iceberg table is:
+
+```text
+lakehouse_db.sensor_metrics
+```
+
+Its analytical fields include:
 
 ```text
 sensor_id
@@ -711,628 +225,273 @@ avg_humidity
 avg_aqi
 ```
 
-Redshift puede combinar esta información con `sensor_stream_ready` para consultar en una misma sentencia el último evento hot y la última ventana histórica de cada sensor.
+The table uses Iceberg format v2 and is partitioned using the day derived from `window_start`.
 
 ---
 
-# Seguridad
+# Stream processing design
 
-## IAM
+## Event Time and Watermarks
 
-Los roles utilizados por Flink y Redshift siguen el principio de mínimo privilegio.
+The Flink application uses the timestamp contained inside each sensor event as Event Time.
 
-Flink dispone de permisos para:
-
-- Leer su JAR desde S3.
-- Consumir el Kinesis Data Stream.
-- Leer y escribir dentro del bucket específico del Lakehouse.
-- Consultar y actualizar la base y tablas correspondientes en Glue.
-- Publicar logs en CloudWatch.
-
-Redshift dispone de permisos para:
-
-- Consumir el Kinesis Data Stream.
-- Consultar AWS Glue Data Catalog.
-- Leer objetos del bucket Iceberg.
-- Utilizar KMS únicamente en el contexto requerido para consumir Kinesis.
-
-Los permisos que acceden directamente a datos se encuentran restringidos mediante ARNs construidos dinámicamente.
-
-El AWS Account ID se obtiene mediante:
-
-```hcl
-data "aws_caller_identity" "current" {}
-```
-
-y no se encuentra hardcodeado en Terraform.
-
-Algunas operaciones globales de AWS requieren `Resource = "*"`, entre ellas determinadas operaciones `Describe` y `List`.
-
-Los permisos KMS que utilizan wildcard se encuentran restringidos mediante condiciones de servicio, por ejemplo:
+Configured out-of-order tolerance:
 
 ```text
-kms:ViaService = kinesis.<region>.amazonaws.com
+10 seconds
 ```
 
-por lo que no representan acceso irrestricto a recursos productivos.
+Source idleness detection:
+
+```text
+30 seconds
+```
+
+Idleness detection prevents an inactive Kinesis partition from indefinitely blocking the global watermark.
+
+Events are grouped by:
+
+```text
+sensor_id
+```
+
+and processed through:
+
+```text
+1-minute Tumbling Event Time Windows
+```
+
+This allows aggregations to represent event-time behavior rather than machine processing time.
 
 ---
 
-## Redshift SQL
+## Checkpoints and state recovery
 
-Dentro de Redshift se utiliza el rol:
-
-```text
-analytics_reader
-```
-
-El rol recibe únicamente los permisos necesarios para consumir la capa analítica.
-
-Entre ellos:
+Flink checkpointing is configured with:
 
 ```text
-USAGE sobre public
-SELECT sobre sensor_stream_raw
-SELECT sobre sensor_stream_typed
-SELECT sobre sensor_stream_ready
-USAGE sobre lakehouse_ext
-TEMP sobre analytics
+Checkpoint interval: 60000 ms
+Minimum pause:       5000 ms
 ```
 
-No recibe permisos administrativos ni permisos para modificar la infraestructura.
+Checkpoints preserve a consistent snapshot of stateful operators.
+
+If the application is interrupted, processing can resume from a completed checkpoint instead of rebuilding state from the beginning.
+
+This is particularly important for Event Time windows and the Iceberg sink.
+
+Iceberg commits are coordinated with Flink checkpoints, preventing partially committed analytical updates from becoming visible.
 
 ---
 
-# Backpressure y saturación
+## Exactly-once and duplicates
 
-Amazon Kinesis Data Streams funciona como buffer durable entre los productores y los consumidores.
+Infrastructure-level consistency and business-level deduplication are different concerns.
 
-## Redshift
+The historical path coordinates Flink checkpoint state with Iceberg commits to provide exactly-once semantics for table writes.
 
-Redshift consume los registros almacenados en Kinesis mediante `sensor_stream_raw`.
-
-Si Redshift no logra consumir al mismo ritmo al que se generan nuevos eventos, los registros permanecen temporalmente en Kinesis y aumenta el lag entre producción y consumo.
-
-Este comportamiento puede detectarse mediante:
+The hot path retains Kinesis metadata such as:
 
 ```text
-SYS_STREAM_SCAN_STATES
+partition_key
+shard_id
+sequence_number
+arrival_timestamp
 ```
 
-y las métricas de Kinesis.
+These values provide traceability for records consumed through Redshift Streaming Ingestion.
 
-Un incremento sostenido de lag indica que el consumidor no está alcanzando la velocidad de producción.
+However, if a producer intentionally publishes the same logical event twice as two different Kinesis records, both records are valid from the infrastructure perspective.
 
-## Apache Flink
-
-Dentro de Flink, un sink lento o un operador saturado puede generar backpressure.
-
-El backpressure reduce progresivamente la velocidad con la que los operadores anteriores pueden producir datos.
-
-Si Flink deja de consumir Kinesis a la velocidad necesaria, esta situación termina reflejándose en:
-
-```text
-IteratorAgeMilliseconds
-```
-
-## Diagnóstico
-
-Para identificar el cuello de botella se monitorean conjuntamente:
-
-- Iterator Age de Kinesis.
-- Throughput de shards.
-- Checkpoints de Flink.
-- Duración de checkpoints.
-- Failed checkpoints.
-- Backpressure de operadores Flink.
-- Utilización de operadores.
-- `SYS_STREAM_SCAN_STATES`.
-- `skipped_rows`.
-- Freshness de Redshift.
-- Utilización de RPU de Redshift Serverless.
-
-## Respuesta
-
-Si el cuello de botella está en Kinesis:
-
-- Aumentar el número de shards.
-
-Si está en Flink:
-
-- Revisar paralelismo.
-- Revisar operadores.
-- Revisar comportamiento del Iceberg Sink.
-
-Si está en Redshift:
-
-- Revisar capacidad del workgroup.
-- Revisar carga analítica.
-- Evaluar aumento de capacidad.
-
----
-
-# Recuperación de estado de Apache Flink
-
-La aplicación utiliza checkpoints automáticos cada:
-
-```text
-60 segundos
-```
-
-Los checkpoints contienen un estado consistente de los operadores y permiten restaurar la ejecución después de una interrupción.
-
-Ante una falla, la aplicación puede recuperar el último checkpoint completado correctamente y continuar el procesamiento desde ese estado consistente en lugar de comenzar nuevamente desde cero.
-
-Esto protege especialmente los operadores stateful utilizados para las ventanas de Event Time.
-
-La escritura hacia Apache Iceberg está coordinada con los checkpoints de Flink.
-
-Los cambios se vuelven visibles mediante commits de Iceberg cuando el checkpoint correspondiente se completa correctamente.
-
-Una interrupción ocurrida antes del commit no debería producir una actualización parcial visible en la tabla analítica.
-
----
-
-# Exactly-once, idempotencia y duplicados
-
-Los dos caminos principales utilizan mecanismos diferentes para proteger la consistencia.
-
-## Hot path
-
-Redshift Streaming Ingestion identifica los registros provenientes de Kinesis mediante información asociada al stream, shard y sequence number.
-
-Esto permite procesar cada registro consumido por la ingesta de streaming una única vez.
-
-## Historical path
-
-Apache Flink mantiene su estado mediante checkpoints.
-
-El Iceberg Sink coordina sus commits con esos checkpoints para proporcionar semántica exactly-once sobre la tabla.
-
-Esto protege el pipeline frente a duplicados generados por reintentos internos o recuperación del procesamiento.
-
-## Duplicados de negocio
-
-Exactly-once de infraestructura no equivale a deduplicación de negocio.
-
-Si el productor publica dos veces el mismo evento lógico como dos registros diferentes de Kinesis, ambos registros poseen identificadores distintos y pueden ser procesados legítimamente.
-
-En un escenario productivo donde este caso deba evitarse, cada evento debería incorporar:
+A production-grade business deduplication strategy could introduce:
 
 ```text
 event_id
 ```
 
-y la capa de procesamiento debería implementar una política explícita de deduplicación.
+and explicitly deduplicate using that identifier.
 
 ---
 
-# Observabilidad
+# Redshift analytical layer
 
-La arquitectura combina métricas de Kinesis, Flink y Redshift.
+Redshift Serverless provides the low-latency analytical layer.
 
-## Kinesis
+The main streaming flow is:
 
-La principal señal utilizada es:
+```text
+Kinesis
+   |
+   v
+sensor_stream_raw
+   |
+   v
+sensor_stream_typed
+   |
+   v
+sensor_stream_ready
+```
+
+The streaming source is exposed through an External Schema:
+
+```sql
+CREATE EXTERNAL SCHEMA kinesis_stream
+FROM KINESIS
+IAM_ROLE default;
+```
+
+The historical Iceberg catalog is exposed separately through Glue:
+
+```sql
+CREATE EXTERNAL SCHEMA lakehouse_ext
+FROM DATA CATALOG
+DATABASE 'lakehouse_db'
+REGION 'us-east-1'
+IAM_ROLE default;
+```
+
+This allows Redshift to query:
+
+```text
+lakehouse_ext.sensor_metrics
+```
+
+and combine recent events with historical aggregates in the same analytical query.
+
+---
+
+## Freshness strategy
+
+The target policy defined for the hot path is:
+
+```text
+Target freshness: <= 60 seconds
+Warning:          > 90 seconds
+Critical:         > 120 seconds sustained for 5 minutes
+```
+
+Relevant signals include:
+
+- `SYS_STREAM_SCAN_STATES`
+- `skipped_rows`
+- Kinesis `IteratorAgeMilliseconds`
+- Kinesis shard throughput
+- Redshift Serverless capacity
+- Redshift workload
+- Flink processing behavior
+
+---
+
+# Backpressure and saturation
+
+Amazon Kinesis acts as a durable buffer between producers and downstream consumers.
+
+If a consumer cannot keep up with incoming events, records remain temporarily available in Kinesis while consumer lag increases.
+
+For Kinesis, a key metric is:
 
 ```text
 IteratorAgeMilliseconds
 ```
 
-Un valor creciente puede indicar que algún consumidor se está retrasando.
+Within Flink, slow sinks or saturated operators can propagate backpressure upstream and reduce the rate at which the application consumes new records.
 
-## Flink
+Relevant diagnostic signals include:
 
-Se monitorean:
+- Kinesis Iterator Age.
+- Shard throughput.
+- Flink checkpoint duration.
+- Failed checkpoints.
+- Flink operator backpressure.
+- Redshift `SYS_STREAM_SCAN_STATES`.
+- Redshift `skipped_rows`.
+- Streaming freshness.
+- Redshift Serverless RPU utilization.
 
-- Checkpoints completados.
-- Checkpoints fallidos.
-- Duración.
-- Backpressure.
-- Logs de CloudWatch.
-- Estado de la aplicación.
-
-Durante la última validación E2E registrada se observó:
-
-```text
-numberOfFailedCheckpoints = 0
-Checkpoint duration ≈ 190-363 ms
-```
-
-## Redshift
-
-La vista utilizada es:
+Depending on the bottleneck, mitigation can include:
 
 ```text
-SYS_STREAM_SCAN_STATES
+Kinesis  -> increase shard capacity
+Flink    -> adjust parallelism / inspect operators and sinks
+Redshift -> review workload or increase Serverless capacity
 ```
-
-La consulta permite observar por shard:
-
-- Filas procesadas.
-- Filas omitidas.
-- Timestamp del último registro.
-- Timestamp del scan.
-- Lag calculado.
-
-El objetivo final es obtener una evidencia con `arrival_timestamp` actualizado y medir la freshness bajo la configuración de auto-refresh.
 
 ---
 
-# Validación End-to-End registrada
+# Security
 
-La validación E2E documentada el 27 de agosto de 2026 desplegó el entorno completo y verificó los dos caminos del pipeline.
+## AWS networking
 
-## Infraestructura
+The cloud environment uses:
 
-Resultado de Terraform:
-
-```text
-48 resources created
-0 modified
-0 destroyed
-```
-
-Servicios:
-
-```text
-Kinesis: ACTIVE
-Redshift Serverless: AVAILABLE
-Flink: RUNNING
-```
-
-## Eventos enviados
-
-Se generaron:
-
-```text
-100 eventos
-5 sensores
-```
-
-## Camino hot
-
-Redshift observó:
-
-```text
-100 eventos
-5 sensores
-```
-
-## Camino histórico
-
-Flink procesó los mismos eventos utilizando:
-
-- Event Time.
-- Watermarks.
-- Ventanas de 1 minuto.
-
-Iceberg produjo:
-
-```text
-15 ventanas
-100 eventos agregados
-5 sensores
-```
-
-También se verificaron:
-
-- Archivos Parquet.
-- Metadata Iceberg.
-- Manifests.
-- Snapshots.
-- Tabla `lakehouse_db.sensor_metrics` en Glue.
-
-## Consistencia
-
-La comparación Redshift vs Iceberg obtuvo:
-
-```text
-Ventanas comparadas:      15
-Eventos Redshift:        100
-Eventos Iceberg:         100
-Diferencias de conteo:     0
-```
-
-Las diferencias observadas en promedios correspondieron únicamente a precisión de punto flotante.
-
-## Observabilidad de la prueba
-
-Se registró:
-
-```text
-Kinesis IteratorAgeMilliseconds: 0
-Flink failed checkpoints:        0
-Checkpoint duration:             ~190-363 ms
-```
-
-El detalle se encuentra en:
-
-```text
-docs/e2e-validation.md
-```
-
-### Nota sobre la auditoría final
-
-La validación anterior fue realizada antes del hardening final de:
-
-- Arranque automático de Flink desde Terraform.
-- Backend Terraform configurable mediante `backend.hcl`.
-- Variables explícitas para shards, checkpoints y parallelism.
-- Auto-refresh de `sensor_stream_raw`.
-- Exposición de `arrival_timestamp`.
-- Política concreta de freshness.
-
-Por lo tanto, antes de la entrega definitiva debe realizarse una última validación controlada del pipeline con la configuración final.
+- Dedicated VPC.
+- Private subnets.
+- Private Redshift Serverless deployment.
+- S3 Gateway VPC Endpoint.
+- Kinesis Interface VPC Endpoint.
+- Security Groups.
+- Public access disabled for Redshift.
 
 ---
 
-# Evidencias
+## IAM
 
-## Preentrega 2
+The Flink and Redshift roles follow scoped-access principles.
 
-### Firehose hacia S3
+Flink receives the permissions necessary to:
 
-![Evidencia Firehose S3](docs/evidencia-firehose-s3.png)
+- Read its JAR from S3.
+- Consume the Kinesis stream.
+- Read and write the Lakehouse bucket.
+- Access the required Glue database and tables.
+- Publish logs to CloudWatch.
 
----
+Redshift receives permissions to:
 
-## Preentrega 3
+- Consume Kinesis.
+- Query AWS Glue Data Catalog.
+- Read Iceberg objects from S3.
+- Use KMS where required by Kinesis access.
 
-### Kafka
+Resource ARNs are generated dynamically.
 
-![Evidencia Kafka](docs/evidencia-kafka.png)
+The AWS account ID is obtained using:
 
-### Productor Kafka
-
-![Evidencia productor Kafka](docs/evidencia-kafka-producer.png)
-
-### Spark Structured Streaming
-
-![Evidencia Spark Streaming](docs/evidencia-spark-streaming.png)
-
----
-
-## Preentrega 4
-
-### Productor hacia Kinesis
-
-![Evidencia productor Kinesis](docs/evidencia-kinesis-producer.png)
-
-### Ventanas de Apache Flink
-
-![Evidencia ventanas Flink](docs/evidencia-flink-window-results.png)
-
-### Checkpoints
-
-![Evidencia checkpoints Flink](docs/evidencia-flink-checkpoints.png)
-
-### AWS Managed Service for Apache Flink
-
-![Evidencia aplicación Flink](docs/evidencia-flink-aws.png)
-
-### Amazon Kinesis Data Streams
-
-![Evidencia Kinesis AWS](docs/evidencia-kinesis-aws.png)
-
-### Artefacto JAR
-
-![Evidencia JAR Flink](docs/evidencia-flink-jar-s3.png)
-
----
-
-## Preentrega 5
-
-### AWS Glue Data Catalog
-
-![Evidencia Glue Iceberg](docs/evidencia-glue-iceberg.png)
-
-### Amazon S3 / Apache Iceberg
-
-![Evidencia S3 Iceberg](docs/evidencia-s3-iceberg.png)
-
-### Amazon Athena
-
-![Evidencia Athena Iceberg](docs/evidencia-athena-iceberg.png)
-
----
-
-## Preentrega 6
-
-Las siguientes evidencias corresponden a la configuración utilizada durante la Preentrega 6.
-
-En esa etapa se validaron dos Materialized Views y refresh manual.
-
-Durante el hardening del Capstone final, `sensor_stream_typed` fue convertido a View convencional y `sensor_stream_raw` pasó a utilizar auto-refresh.
-
-Las capturas históricas se conservan porque documentan la evolución y validación previa del proyecto.
-
-### Streaming Ingestion
-
-![Evidencia Redshift Streaming Ingestion](docs/evidencia-redshift-streaming-raw.png)
-
-### Vista analítica
-
-![Evidencia vista analítica Redshift](docs/evidencia-redshift-ready-view.png)
-
-### Mantenimiento incremental histórico
-
-![Evidencia Materialized Views incrementales](docs/evidencia-redshift-incremental.png)
-
-### Iceberg desde Redshift
-
-![Evidencia Iceberg desde Redshift](docs/evidencia-redshift-iceberg-query.png)
-
-### JOIN hot + histórico
-
-![Evidencia JOIN hot e histórico](docs/evidencia-redshift-join-hot-historico.png)
-
-### Lag
-
-![Evidencia lag Redshift](docs/evidencia-redshift-lag.png)
-
-### Seguridad
-
-![Evidencia seguridad Redshift](docs/evidencia-redshift-seguridad.png)
-
-### Metadata Iceberg
-
-![Evidencia metadata Iceberg](docs/evidencia-redshift-iceberg-metadata.png)
-
----
-
-# Estructura del proyecto
-
-```text
-Terraform-Capstone/
-|-- .gitattributes
-|-- .gitignore
-|-- CheckPoint_Redshift_Pim_Marcos.pdf
-|-- PLAN_OUTPUT.md
-|-- README.md
-|
-|-- docs/
-|   |-- e2e-validation.md
-|   |-- evidencia-athena-iceberg.png
-|   |-- evidencia-firehose-s3.png
-|   |-- evidencia-flink-aws.png
-|   |-- evidencia-flink-checkpoints.png
-|   |-- evidencia-flink-jar-s3.png
-|   |-- evidencia-flink-window-results.png
-|   |-- evidencia-glue-iceberg.png
-|   |-- evidencia-kafka-producer.png
-|   |-- evidencia-kafka.png
-|   |-- evidencia-kinesis-aws.png
-|   |-- evidencia-kinesis-producer.png
-|   |-- evidencia-redshift-iceberg-metadata.png
-|   |-- evidencia-redshift-iceberg-query.png
-|   |-- evidencia-redshift-incremental.png
-|   |-- evidencia-redshift-join-hot-historico.png
-|   |-- evidencia-redshift-lag.png
-|   |-- evidencia-redshift-ready-view.png
-|   |-- evidencia-redshift-seguridad.png
-|   |-- evidencia-redshift-streaming-raw.png
-|   |-- evidencia-s3-iceberg.png
-|   `-- evidencia-spark-streaming.png
-|
-|-- flink-app/
-|   |-- pom.xml
-|   `-- src/main/java/com/dataops/flink/
-|       `-- SensorStreamingJob.java
-|
-|-- k8s/
-|   |-- kafka-configmap.yaml
-|   |-- kafka-deployment.yaml
-|   |-- kafka-service.yaml
-|   |-- namespace.yaml
-|   |-- spark-configmap.yaml
-|   |-- spark-deployment.yaml
-|   `-- spark-job-configmap.yaml
-|
-|-- producer/
-|   `-- producer.py
-|
-|-- sql/
-|   `-- streaming_ingestion.sql
-|
-|-- scripts/
-|   |-- send_sensor_events.ps1
-|   `-- send_test_events.ps1
-|
-|-- spark/
-|   `-- streaming_job.py
-|
-`-- terraform/
-    |-- bootstrap/
-    |   |-- .terraform.lock.hcl
-    |   |-- main.tf
-    |   |-- outputs.tf
-    |   |-- provider.tf
-    |   `-- variables.tf
-    |
-    |-- environments/
-    |   `-- dev/
-    |       |-- .terraform.lock.hcl
-    |       |-- backend.hcl.example
-    |       |-- backend.tf
-    |       |-- main.tf
-    |       |-- outputs.tf
-    |       |-- provider.tf
-    |       |-- terraform.tfvars.example
-    |       `-- variables.tf
-    |
-    `-- modules/
-        |-- flink/
-        |   |-- main.tf
-        |   |-- outputs.tf
-        |   `-- variables.tf
-        |
-        |-- identity/
-        |   |-- main.tf
-        |   |-- outputs.tf
-        |   `-- variables.tf
-        |
-        |-- kinesis/
-        |   |-- main.tf
-        |   |-- outputs.tf
-        |   `-- variables.tf
-        |
-        |-- lakehouse/
-        |   |-- main.tf
-        |   |-- outputs.tf
-        |   `-- variables.tf
-        |
-        |-- network/
-        |   |-- main.tf
-        |   |-- outputs.tf
-        |   `-- variables.tf
-        |
-        `-- redshift/
-            |-- main.tf
-            |-- outputs.tf
-            `-- variables.tf
+```hcl
+data "aws_caller_identity" "current" {}
 ```
 
-Los directorios `.terraform/`, los archivos `terraform.tfstate`, los archivos locales `.tfvars`, `backend.hcl`, `.venv/` y los artefactos Maven dentro de `flink-app/target/` permanecen fuera del repositorio.
+instead of being hardcoded.
 
-Los archivos `.terraform.lock.hcl` sí se versionan para mantener consistencia de providers.
+Operations that require AWS-wide `Describe` or `List` permissions may use:
+
+```text
+Resource = "*"
+```
+
+while data-access permissions remain scoped to project resources.
 
 ---
 
-# Organización de Terraform
+## Redshift access
 
-## `terraform/bootstrap`
-
-Crea:
-
-- Bucket S3 para remote state.
-- Cifrado del bucket.
-- Tabla DynamoDB para locking.
-
-Variables:
+The SQL layer defines an analytical role:
 
 ```text
-region
-state_bucket_name
-lock_table_name
+analytics_reader
 ```
 
-Outputs:
+with read-oriented permissions for the analytical schemas and views.
 
-```text
-state_bucket_name
-lock_table_name
-```
-
-Este stack se administra separadamente del entorno principal.
+It does not receive infrastructure administration privileges.
 
 ---
 
-## `terraform/environments/dev`
+# Infrastructure as Code
 
-Es el composition root del entorno.
+Terraform manages the infrastructure through reusable modules.
 
-Conecta:
+The environment composition root connects:
 
 ```text
 network
@@ -1343,139 +502,389 @@ flink
 redshift
 ```
 
-Las dependencias se transmiten mediante variables y outputs de Terraform.
+Dependencies are passed through Terraform variables and outputs.
 
-Ejemplos:
+Examples:
 
 ```text
-Kinesis stream ARN → Flink
-Kinesis stream ARN → Redshift
-Lakehouse bucket ARN → Flink
-Lakehouse bucket ARN → Redshift
-Glue database name → Flink
-Glue database name → Redshift
-VPC/subnets → Redshift
+Kinesis Stream ARN    -> Flink
+Kinesis Stream ARN    -> Redshift
+Lakehouse Bucket ARN  -> Flink
+Lakehouse Bucket ARN  -> Redshift
+Glue Database         -> Flink
+Glue Database         -> Redshift
+VPC / Subnets         -> Redshift
 ```
 
 ---
 
-## `terraform/modules/network`
+## Remote state
 
-Administra:
+Terraform state is stored remotely using:
+
+```text
+Amazon S3
+```
+
+with locking provided by:
+
+```text
+Amazon DynamoDB
+```
+
+The bootstrap stack is intentionally separated from the main environment because the remote backend must exist before the primary infrastructure can initialize against it.
+
+---
+
+## Terraform modules
+
+### `terraform/modules/network`
+
+Manages:
 
 - VPC.
-- Subredes privadas.
+- Private subnets.
 - Availability Zones.
-- Route table.
-- Asociaciones.
+- Route tables.
+- Route associations.
 - S3 Gateway Endpoint.
-- DNS Support.
-- DNS Hostnames.
+- DNS support.
 
----
+### `terraform/modules/identity`
 
-## `terraform/modules/identity`
+Manages project IAM roles and policies.
 
-Administra roles de procesamiento y auditoría.
+### `terraform/modules/kinesis`
 
-Los permisos de acceso a datos se restringen a los recursos correspondientes al proyecto.
-
----
-
-## `terraform/modules/kinesis`
-
-Administra:
+Manages:
 
 - Kinesis Data Stream.
-- Data Firehose.
-- IAM.
-- CloudWatch.
-- Entrega hacia Raw/Bronze.
+- Amazon Data Firehose.
+- IAM permissions.
+- CloudWatch resources.
+- Raw/Bronze delivery.
 
-La cantidad de shards se recibe mediante:
+### `terraform/modules/flink`
 
-```hcl
-kinesis_shard_count
-```
+Manages:
 
----
-
-## `terraform/modules/flink`
-
-Administra:
-
-- Bucket del JAR.
-- Objeto JAR.
+- JAR artifact bucket.
+- Flink application artifact.
+- AWS Managed Service for Apache Flink.
 - CloudWatch Logs.
 - IAM.
-- Managed Flink.
-- Environment properties.
-- Checkpoints.
+- Runtime properties.
+- Checkpoint configuration.
 - Parallelism.
-- Arranque de la aplicación.
+- Application startup.
 
-Los principales parámetros se reciben desde el entorno:
+### `terraform/modules/lakehouse`
 
-```text
-start_application
-checkpoint_interval_ms
-min_pause_between_checkpoints_ms
-parallelism
-parallelism_per_kpu
-```
+Manages:
 
----
-
-## `terraform/modules/lakehouse`
-
-Administra:
-
-- Bucket S3 del Lakehouse.
-- Versionado.
-- Cifrado.
+- S3 Lakehouse bucket.
+- Versioning.
+- Encryption.
 - Public Access Block.
-- Glue Database.
-- Warehouse path.
+- AWS Glue database.
+- Iceberg warehouse path.
 
----
+### `terraform/modules/redshift`
 
-## `terraform/modules/redshift`
+Manages:
 
-Administra:
-
-- IAM role.
-- IAM policy.
+- Redshift IAM role.
 - Security Groups.
 - Kinesis VPC Endpoint.
 - Redshift Serverless Namespace.
 - Redshift Serverless Workgroup.
-- Daily usage limit.
-
-El workgroup tiene:
-
-```text
-Base capacity: 4 RPU
-Max capacity: 4 RPU
-Public access: false
-```
-
-El límite de uso diario permite controlar el costo del entorno de desarrollo.
+- Compute usage limits.
 
 ---
 
-# Configuración local
+# Key development parameters
 
-Los archivos con valores específicos del entorno permanecen fuera de Git.
+The development environment uses explicit configuration for the main streaming components.
 
-## Variables del entorno
+| Parameter | Value |
+|---|---:|
+| AWS Region | `us-east-1` |
+| Kinesis shards | `2` |
+| Flink runtime | `FLINK-1_20` |
+| Flink parallelism | `1` |
+| Parallelism per KPU | `1` |
+| Flink autoscaling | Disabled |
+| Checkpoint interval | `60000 ms` |
+| Minimum checkpoint pause | `5000 ms` |
+| Watermark out-of-orderness | `10 seconds` |
+| Source idleness | `30 seconds` |
+| Window size | `1 minute` |
+| Redshift Serverless base capacity | `4 RPU` |
+| Redshift Serverless max capacity | `4 RPU` |
+| Redshift public access | Disabled |
 
-Copiar:
+These values are exposed through Terraform variables instead of being tightly coupled to module implementation.
 
-```powershell
-Copy-Item terraform.tfvars.example terraform.tfvars
+---
+
+# End-to-end validation
+
+A documented end-to-end validation deployed the complete environment and tested both analytical paths using synthetic sensor events.
+
+Infrastructure state:
+
+```text
+48 resources created
+Kinesis:          ACTIVE
+Redshift:         AVAILABLE
+Flink:            RUNNING
 ```
 
-Ejemplo:
+Test workload:
+
+```text
+100 events
+5 sensors
+```
+
+Hot path result:
+
+```text
+Redshift events: 100
+Sensors:           5
+```
+
+Historical path result:
+
+```text
+Iceberg windows: 15
+Aggregated events: 100
+Sensors:             5
+```
+
+The historical validation also confirmed:
+
+- Parquet files.
+- Iceberg metadata.
+- Manifests.
+- Snapshots.
+- `lakehouse_db.sensor_metrics` in AWS Glue.
+
+Cross-path consistency:
+
+```text
+Windows compared:  15
+Redshift events:   100
+Iceberg events:    100
+Count differences:   0
+```
+
+Observed differences in averages were limited to floating-point precision.
+
+Streaming observability during the test recorded:
+
+```text
+Kinesis IteratorAgeMilliseconds: 0
+Flink failed checkpoints:        0
+Checkpoint duration:             ~190-363 ms
+```
+
+Additional details are documented in:
+
+```text
+docs/e2e-validation.md
+```
+
+---
+
+# Local Kafka and Spark environment
+
+The repository also contains a local distributed-processing environment used to experiment with streaming concepts independently from the AWS architecture.
+
+It includes:
+
+```text
+Python Producer
+      |
+      v
+Apache Kafka
+urban_sensors
+      |
+      v
+Apache Spark
+Structured Streaming
+      |
+      v
+1-minute windows
+```
+
+Kubernetes manifests are located in:
+
+```text
+k8s/
+```
+
+and the Spark job in:
+
+```text
+spark/streaming_job.py
+```
+
+This environment is complementary to the main AWS pipeline and is not part of the production-style cloud data path described above.
+
+---
+
+# Repository structure
+
+```text
+Realtime-data-platform-aws/
+|
+|-- README.md
+|-- .gitignore
+|-- .gitattributes
+|
+|-- docs/
+|   |-- e2e-validation.md
+|   |-- final-*.png
+|   `-- evidencia-*.png
+|
+|-- flink-app/
+|   |-- pom.xml
+|   `-- src/main/java/com/dataops/flink/
+|       `-- SensorStreamingJob.java
+|
+|-- producer/
+|   `-- producer.py
+|
+|-- scripts/
+|   |-- render_redshift_sql.py
+|   |-- send_sensor_events.ps1
+|   `-- send_test_events.ps1
+|
+|-- sql/
+|   `-- streaming_ingestion.sql
+|
+|-- spark/
+|   `-- streaming_job.py
+|
+|-- k8s/
+|   |-- namespace.yaml
+|   |-- kafka-configmap.yaml
+|   |-- kafka-deployment.yaml
+|   |-- kafka-service.yaml
+|   |-- spark-configmap.yaml
+|   |-- spark-deployment.yaml
+|   `-- spark-job-configmap.yaml
+|
+`-- terraform/
+    |-- bootstrap/
+    |
+    |-- environments/
+    |   `-- dev/
+    |       |-- backend.hcl.example
+    |       |-- backend.tf
+    |       |-- main.tf
+    |       |-- outputs.tf
+    |       |-- provider.tf
+    |       |-- terraform.tfvars.example
+    |       `-- variables.tf
+    |
+    `-- modules/
+        |-- network/
+        |-- identity/
+        |-- kinesis/
+        |-- flink/
+        |-- lakehouse/
+        `-- redshift/
+```
+
+Generated infrastructure state, local configuration and build artifacts are excluded from Git.
+
+---
+
+# Running the project
+
+## Requirements
+
+The full environment was developed using:
+
+- Git.
+- Terraform.
+- AWS CLI.
+- Python.
+- Java 17.
+- Apache Maven.
+- PowerShell.
+- Docker Desktop.
+- kubectl.
+- Minikube.
+
+Valid AWS credentials must be configured locally.
+
+Credentials must never be stored inside the repository.
+
+---
+
+## 1. Clone the repository
+
+```powershell
+git clone https://github.com/MarcosPim-web/Realtime-data-platform-aws.git
+cd Realtime-data-platform-aws
+```
+
+---
+
+## 2. Create the Terraform backend
+
+```powershell
+cd terraform\bootstrap
+
+terraform init
+terraform validate
+terraform plan
+terraform apply
+```
+
+The bootstrap stack creates the resources required for the remote Terraform backend.
+
+After creation:
+
+```powershell
+cd ..\..
+```
+
+---
+
+## 3. Build the Flink application
+
+```powershell
+cd flink-app
+mvn clean package
+cd ..
+```
+
+The generated application artifact is:
+
+```text
+flink-app/target/realtime-flink-processing-1.0.0.jar
+```
+
+Terraform uploads this artifact to S3 when deploying the Managed Flink application.
+
+---
+
+## 4. Configure the development environment
+
+```powershell
+cd terraform\environments\dev
+
+Copy-Item terraform.tfvars.example terraform.tfvars
+Copy-Item backend.hcl.example backend.hcl
+```
+
+Update the environment-specific values before deployment.
+
+Example configuration:
 
 ```hcl
 region                                  = "us-east-1"
@@ -1492,31 +901,18 @@ flink_checkpoint_interval_ms            = 60000
 flink_min_pause_between_checkpoints_ms  = 5000
 flink_parallelism                       = 1
 flink_parallelism_per_kpu               = 1
+
+glue_database_name                      = "lakehouse_db"
+redshift_database_name                  = "analytics"
 ```
 
-El nombre del bucket Raw debe ser globalmente único.
+The S3 bucket name must be globally unique.
 
 ---
 
-## Backend remoto
+## 5. Configure the remote backend
 
-El bloque versionado es:
-
-```hcl
-terraform {
-  backend "s3" {}
-}
-```
-
-La configuración concreta se entrega mediante un archivo local.
-
-Copiar:
-
-```powershell
-Copy-Item backend.hcl.example backend.hcl
-```
-
-Ejemplo:
+Example `backend.hcl`:
 
 ```hcl
 bucket         = "CHANGE-ME-terraform-state-bucket"
@@ -1526,396 +922,240 @@ dynamodb_table = "CHANGE-ME-terraform-lock-table"
 encrypt        = true
 ```
 
-`backend.hcl` se encuentra ignorado por Git.
+`backend.hcl` is intentionally excluded from Git.
 
----
-
-# Despliegue desde cero
-
-## Requisitos
-
-Herramientas utilizadas:
-
-- Git.
-- Terraform.
-- AWS CLI.
-- Python.
-- Java 17.
-- Apache Maven.
-- Docker Desktop.
-- kubectl.
-- minikube.
-
-Las credenciales de AWS deben configurarse localmente y nunca almacenarse en el repositorio.
-
----
-
-## 1. Backend remoto
-
-Ingresar:
-
-```powershell
-cd terraform\bootstrap
-```
-
-Inicializar:
-
-```powershell
-terraform init
-```
-
-Validar:
-
-```powershell
-terraform validate
-```
-
-Revisar:
-
-```powershell
-terraform plan
-```
-
-Crear los recursos del backend:
-
-```powershell
-terraform apply
-```
-
-Los outputs permiten conocer:
-
-```text
-state_bucket_name
-lock_table_name
-```
-
----
-
-## 2. Compilar Flink
-
-Desde la raíz:
-
-```powershell
-cd flink
-mvn clean package
-cd ..
-```
-
-Antes de continuar debe existir:
-
-```text
-flink-app/target/realtime-flink-processing-1.0.0.jar
-```
-
----
-
-## 3. Configurar el entorno
-
-Ingresar:
-
-```powershell
-cd terraform\environments\dev
-```
-
-Crear archivos locales:
-
-```powershell
-Copy-Item terraform.tfvars.example terraform.tfvars
-Copy-Item backend.hcl.example backend.hcl
-```
-
-Editar los valores correspondientes.
-
----
-
-## 4. Inicializar Terraform
+Initialize Terraform:
 
 ```powershell
 terraform init -reconfigure -backend-config="backend.hcl"
-```
-
-Validar:
-
-```powershell
 terraform validate
-```
-
-Revisar formato desde la raíz del repositorio:
-
-```powershell
-terraform fmt -recursive
-```
-
-Plan:
-
-```powershell
 terraform plan
 ```
 
 ---
 
-## 5. Desplegar
+## 6. Deploy the environment
 
 ```powershell
 terraform apply
 ```
 
-Con:
+With:
 
-```text
+```hcl
 flink_start_application = true
 ```
 
-la aplicación Managed Flink debe ser iniciada como parte del despliegue.
+Terraform requests the Flink application startup as part of the infrastructure deployment.
 
----
-
-## 6. Verificar infraestructura
-
-Kinesis debe encontrarse:
+Expected service states:
 
 ```text
-ACTIVE
-```
-
-Redshift Serverless:
-
-```text
-AVAILABLE
-```
-
-Managed Flink:
-
-```text
-RUNNING
+Kinesis:          ACTIVE
+Redshift:         AVAILABLE
+Managed Flink:    RUNNING
 ```
 
 ---
 
-# Ejecución de SQL de Redshift
+# Redshift SQL deployment
 
-El archivo versionado funciona como template parametrizado:
+The version-controlled SQL template is:
 
 ```text
 sql/streaming_ingestion.sql
 ```
 
-Los valores del entorno se obtienen desde `terraform/environments/dev/terraform.tfvars` mediante:
+Environment-specific values are rendered automatically from:
+
+```text
+terraform/environments/dev/terraform.tfvars
+```
+
+From the repository root:
 
 ```powershell
 python .\scripts\render_redshift_sql.py
 ```
 
-El comando genera el SQL ejecutable:
+This generates:
 
 ```text
 sql/streaming_ingestion.rendered.sql
 ```
 
-El archivo renderizado es especifico del entorno y esta excluido de Git.
+The rendered file contains environment-specific values and is excluded from Git.
 
-Incluye:
+The SQL setup includes:
 
-- External Schema Kinesis.
+- Kinesis External Schema.
 - `sensor_stream_raw`.
-- Auto-refresh.
-- Parseo JSON.
+- Automatic streaming refresh.
+- JSON validation and parsing.
 - `sensor_stream_typed`.
 - `sensor_stream_ready`.
-- Validación hot.
 - Glue External Schema.
-- Consulta Iceberg.
-- JOIN.
-- Monitoring query.
-- Rol `analytics_reader`.
-- Grants.
-
-El script debe ejecutarse respetando el orden de dependencias.
+- Iceberg queries.
+- Hot + historical JOIN.
+- Streaming monitoring queries.
+- `analytics_reader`.
+- SQL grants.
 
 ---
 
-# Validación final recomendada
+# Sending synthetic events
 
-La última validación antes de la entrega debe ejecutarse sobre un entorno creado desde cero.
+The repository includes PowerShell scripts for sending synthetic sensor events to Kinesis.
 
-## 1. Terraform
-
-```powershell
-terraform apply
-```
-
-Registrar:
-
-- Cantidad de recursos creados.
-- Estado de Kinesis.
-- Estado de Flink.
-- Estado de Redshift.
-
-## 2. SQL
-
-Generar primero el SQL especifico del entorno:
-
-```powershell
-python .\scripts\render_redshift_sql.py
-```
-
-Luego ejecutar en Redshift:
-
-```text
-sql/streaming_ingestion.rendered.sql
-```
-
-## 3. Eventos sintéticos
-
-Desde la raíz del repositorio:
+Default test:
 
 ```powershell
 .\scripts\send_test_events.ps1
 ```
 
-El script utilizado históricamente genera:
+The default workload generates:
 
 ```text
-100 eventos
+100 events
+5 sensors
 ```
 
-## 4. Hot path
-
-Validar:
-
-```sql
-SELECT
-    arrival_timestamp,
-    sensor_id,
-    event_timestamp,
-    temperature,
-    humidity,
-    air_quality_index
-FROM sensor_stream_ready
-ORDER BY event_timestamp DESC
-LIMIT 20;
-```
-
-La captura final debe mostrar claramente:
-
-```text
-arrival_timestamp
-```
-
-actualizado.
-
-## 5. Historical path
-
-Validar:
-
-```text
-lakehouse_ext.sensor_metrics
-```
-
-y confirmar:
-
-- Eventos procesados.
-- Sensores.
-- Ventanas.
-- Archivos Iceberg.
-- Glue Table.
-
-## 6. JOIN
-
-Ejecutar la consulta hot + histórica incluida en el SQL consolidado.
-
-## 7. Observabilidad
-
-Capturar:
-
-```text
-Kinesis IteratorAgeMilliseconds
-Flink checkpoints
-Flink exceptions
-Redshift SYS_STREAM_SCAN_STATES
-Redshift freshness
-```
-
-## 8. Seguridad
-
-Validar:
-
-```text
-analytics_reader
-```
-
-y los permisos correspondientes.
-
-## 9. Consistencia
-
-Comparar:
-
-```text
-Eventos Redshift
-Eventos agregados por Iceberg
-Sensores
-Conteos por ventana
-Promedios
-```
-
-## 10. Limpieza
-
-Después de obtener todas las evidencias:
+A custom stream name or event count can also be provided:
 
 ```powershell
-terraform destroy
+.\scripts\send_test_events.ps1 `
+    -StreamName "realtime-data-platform-dev-stream" `
+    -RecordCount 100
 ```
 
-El backend remoto de `terraform/bootstrap` se mantiene separado y no se elimina como parte del destroy del entorno de desarrollo.
+Example event:
+
+```json
+{
+  "sensor_id": "sensor-01",
+  "temperature": 24.5,
+  "humidity": 61.8,
+  "air_quality_index": 74,
+  "timestamp": "2026-08-27T18:30:00.0000000Z"
+}
+```
 
 ---
 
-# Validación del código
+# Observability
 
-## Terraform format
+## Kinesis
 
-Desde la raíz:
+Main signals:
+
+```text
+IteratorAgeMilliseconds
+Read / Write throughput
+Shard-level behavior
+```
+
+---
+
+## Apache Flink
+
+Monitored signals include:
+
+- Application status.
+- Completed checkpoints.
+- Failed checkpoints.
+- Checkpoint duration.
+- Operator backpressure.
+- Exceptions.
+- CloudWatch Logs.
+
+---
+
+## Redshift
+
+Streaming state can be inspected through:
+
+```text
+SYS_STREAM_SCAN_STATES
+```
+
+Useful information includes:
+
+- Rows processed.
+- Rows skipped.
+- Last record timestamp.
+- Scan timestamp.
+- Streaming lag.
+
+---
+
+# Selected evidence
+
+## Managed Apache Flink running
+
+![Flink application running](docs/final-flink-running.png)
+
+## Flink checkpoints
+
+![Flink checkpoints](docs/final-flink-checkpoints.png)
+
+## Flink monitoring
+
+![Flink monitoring](docs/final-flink-monitoring.png)
+
+## Kinesis monitoring
+
+![Kinesis throughput alarm](docs/final-kinesis-throughput-alarm.png)
+
+## Redshift hot path
+
+![Redshift hot path](docs/final-redshift-hot.png)
+
+## Redshift and Iceberg integration
+
+![Redshift Iceberg integration](docs/final-redshift-iceberg.png)
+
+Additional implementation and validation screenshots are available in:
+
+```text
+docs/
+```
+
+---
+
+# Code validation
+
+## Terraform formatting
+
+From the repository root:
 
 ```powershell
 terraform fmt -recursive
-```
-
-Comprobación:
-
-```powershell
 terraform fmt -check -recursive
 ```
 
-## Bootstrap
+## Bootstrap validation
 
 ```powershell
 terraform "-chdir=terraform/bootstrap" validate
 ```
 
-## Environment dev
+## Development environment
+
+After backend initialization:
 
 ```powershell
 terraform "-chdir=terraform/environments/dev" validate
 ```
 
-Si se utiliza backend parcial y Terraform requiere reinicialización:
+## Flink application
 
 ```powershell
-cd terraform\environments\dev
-terraform init -reconfigure -backend-config="backend.hcl"
-terraform validate
-cd ..\..\..
-```
-
-## Maven
-
-```powershell
-cd flink
+cd flink-app
 mvn clean package
 cd ..
 ```
 
-## Git
+## Git checks
 
 ```powershell
 git status
@@ -1924,196 +1164,84 @@ git diff --check
 
 ---
 
-# Gestión de costos
+# Cost management
 
-El proyecto utiliza recursos administrados que pueden generar costos mientras permanecen activos.
+The project uses managed AWS resources that may generate costs while running.
 
-Medidas aplicadas:
+The development environment therefore uses:
 
-- Kinesis con cantidad de shards limitada.
-- Flink con parallelism controlado.
-- Checkpoints cada 60 segundos.
-- Redshift Serverless limitado a 4 RPU.
-- Límite diario de compute.
-- Public access deshabilitado.
-- Destrucción del entorno después de las pruebas.
+- Limited Kinesis shard count.
+- Controlled Flink parallelism.
+- 60-second checkpoints.
+- Redshift Serverless capacity limits.
+- Daily Redshift compute limits.
+- Private infrastructure.
+- Terraform-managed destruction after testing.
 
-El objetivo del entorno `dev` es permitir validaciones controladas y posteriormente eliminar los recursos mediante Terraform.
-
----
-
-# Ciclo de vida con Terraform
-
-Terraform administra el ciclo de vida del stack completo.
-
-## Bootstrap
-
-El bootstrap crea los recursos necesarios para almacenar el state remoto.
-
-```text
-Terraform
-   |
-   v
-S3 Remote State
-DynamoDB State Lock
-```
-
-Este stack se mantiene separado porque el backend debe existir antes de inicializar el entorno principal.
-
-## Environment
-
-El entorno principal crea y conecta:
-
-```text
-Networking
-IAM
-Kinesis
-Firehose
-Lakehouse
-Managed Flink
-Redshift Serverless
-VPC Endpoints
-CloudWatch
-```
-
-Los módulos utilizan outputs para transmitir identificadores entre componentes y evitar duplicar valores manualmente.
-
-## Actualizaciones
-
-Terraform detecta diferencias entre configuración y estado.
-
-Los cambios en infraestructura se revisan mediante:
+Resources can be removed with:
 
 ```powershell
-terraform plan
-```
-
-y se aplican mediante:
-
-```powershell
-terraform apply
-```
-
-El JAR de Flink utiliza un hash del archivo para detectar modificaciones de código.
-
-## Destrucción
-
-```powershell
+cd terraform\environments\dev
 terraform destroy
 ```
 
-elimina el entorno de desarrollo de forma declarativa.
-
-El backend permanece separado.
+The Terraform backend remains separate so that state infrastructure can be managed independently.
 
 ---
 
-# Consideraciones para auditoría
+# Git and security hygiene
 
-Un auditor externo debería poder:
-
-1. Clonar el repositorio.
-2. Configurar credenciales AWS.
-3. Crear el backend.
-4. Compilar la aplicación Flink.
-5. Crear `terraform.tfvars` desde el ejemplo.
-6. Crear `backend.hcl` desde el ejemplo.
-7. Inicializar Terraform.
-8. Ejecutar `terraform plan`.
-9. Ejecutar `terraform apply`.
-10. Verificar que Kinesis, Flink y Redshift se encuentran operativos.
-11. Ejecutar el SQL de Redshift.
-12. Generar eventos sintéticos.
-13. Verificar los dos caminos analíticos.
-14. Consultar Iceberg.
-15. Ejecutar el JOIN.
-16. Revisar métricas y logs.
-17. Comparar consistencia.
-18. Ejecutar `terraform destroy`.
-
-La documentación no depende de configuraciones privadas ni de archivos `.terraform` versionados.
-
----
-
-# Archivos excluidos del repositorio
-
-El `.gitignore` excluye:
-
-- `.terraform/`
-- `.venv/`
-- `*.tfstate`
-- `*.tfstate.*`
-- `*.tfvars`
-- `*.tfvars.json`
-- `backend.hcl`
-- Configuración local de VS Code.
-- Artefactos de Maven dentro de `flink-app/target/`.
-- Archivos temporales.
-
-Esto evita publicar estados, credenciales, configuración específica del entorno y artefactos generados localmente.
-
----
-
-# Estado del Capstone
-
-La arquitectura fue validada previamente de extremo a extremo con resultados consistentes entre Redshift e Iceberg.
-
-Durante la auditoría final se realizaron ajustes para reforzar:
-
-- Reproducibilidad.
-- Parametrización.
-- Arranque declarativo de Flink.
-- Configuración de backend.
-- Freshness de Redshift.
-- Exposición de `arrival_timestamp`.
-- Backpressure.
-- Recuperación ante fallos.
-- Exactly-once.
-- Idempotencia.
-- Documentación para auditoría externa.
-
-Antes de entregar el DAAT final se realizará una nueva validación E2E sobre esta configuración y se actualizarán las evidencias finales con los resultados obtenidos.
-
----
-
-# Repositorio
-
-Repositorio del proyecto:
-
-`MarcosPim-web/Terraform-Capstone`
-
-El repositorio debe permanecer público y accesible durante la evaluación.
-
----
-
-# Entrega final
-
-El documento final corresponde al:
-
-**Documento de Arquitectura y Auditoría Técnica (DAAT)**
-
-El PDF final debe consolidar:
-
-- Arquitectura.
-- Parámetros críticos.
-- Infraestructura Terraform.
-- Streaming Ingestion.
-- Event Time y Watermarks.
-- Lakehouse.
-- Redshift.
-- Seguridad.
-- Observabilidad.
-- Backpressure.
-- Recuperación de estado de Flink.
-- Exactly-once e idempotencia.
-- Evidencia End-to-End.
-- Freshness.
-- Trade-offs.
-- Ciclo de vida Terraform.
-- Instrucciones para auditoría.
-
-El archivo final deberá utilizar el nombre solicitado por la consigna:
+The repository excludes local and sensitive files such as:
 
 ```text
-Marcos_Pim_Capstone_RealTime.pdf
+.terraform/
+.venv/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+backend.hcl
+flink-app/target/
 ```
+
+Example configuration files remain versioned:
+
+```text
+terraform.tfvars.example
+backend.hcl.example
+```
+
+This keeps the project reproducible without publishing environment-specific configuration, Terraform state or credentials.
+
+The `.terraform.lock.hcl` files remain version-controlled to preserve provider consistency.
+
+---
+
+# Project background
+
+This platform was originally developed while completing a Data Engineering training program.
+
+The project was progressively expanded into an end-to-end architecture covering:
+
+```text
+Infrastructure as Code
+Real-time ingestion
+Distributed processing
+Stateful stream processing
+Lakehouse architecture
+Low-latency analytics
+Observability
+Security
+Infrastructure lifecycle
+```
+
+The final repository is maintained as a technical portfolio project focused on demonstrating practical Data Engineering concepts using AWS, Terraform and open-source streaming technologies.
+
+---
+
+## Author
+
+**Marcos Rafael Insfrán**
+GitHub: `MarcosPim-web`
+
+Data Engineering · Real-Time Processing · Infrastructure as Code · Data Pipelines
